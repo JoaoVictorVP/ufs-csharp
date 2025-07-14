@@ -89,8 +89,14 @@ public readonly record struct FsPath
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new PathException.EmptyPath();
-        if (value.StartsWith('/') && (value.Contains("..") || value.Contains('.')))
-            throw new PathException.ContainsDottedSegmentsInAbsolutePath(value);
+
+        if (value.StartsWith('/'))
+        {
+            var segments = value.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Any(segment => segment == "." || segment == ".."))
+                throw new PathException.ContainsDottedSegmentsInAbsolutePath(value);
+        }
+
         foreach (var invalidChar in InvalidPathChars)
             if (value.Contains(invalidChar))
                 throw new PathException.InvalidPathCharacters(value);

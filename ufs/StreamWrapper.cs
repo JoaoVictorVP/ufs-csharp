@@ -1,6 +1,6 @@
 namespace ufs;
 
-public abstract record class StreamWrapper
+public abstract record class StreamWrapper : IDisposable
 {
     public abstract bool IsReadable { get; }
     public abstract bool IsWritable { get; }
@@ -8,6 +8,8 @@ public abstract record class StreamWrapper
 
     public abstract Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default);
     public abstract Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default);
+
+    public abstract void Dispose();
 
     public record Real(Stream Inner) : StreamWrapper
     {
@@ -24,13 +26,19 @@ public abstract record class StreamWrapper
         {
             await Inner.WriteAsync(buffer, cancellationToken);
         }
+
+        public override void Dispose()
+        {
+            Inner.Dispose();
+        }
     };
     public record Functional(
         Func<bool> isReadable,
         Func<bool> isWritable,
         Func<long> length,
         Func<Memory<byte>, CancellationToken, Task<int>> readAsync,
-        Func<ReadOnlyMemory<byte>, CancellationToken, Task> writeAsync
+        Func<ReadOnlyMemory<byte>, CancellationToken, Task> writeAsync,
+        Action dispose
     ) : StreamWrapper
     {
         private readonly Func<bool> isReadable = isReadable;
@@ -38,6 +46,7 @@ public abstract record class StreamWrapper
         private readonly Func<long> length = length;
         private readonly Func<Memory<byte>, CancellationToken, Task<int>> readAsync = readAsync;
         private readonly Func<ReadOnlyMemory<byte>, CancellationToken, Task> writeAsync = writeAsync;
+        private readonly Action dispose = dispose;
 
         public override bool IsReadable => isReadable();
         public override bool IsWritable => isWritable();
@@ -50,6 +59,12 @@ public abstract record class StreamWrapper
         public override async Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
             await writeAsync(buffer, cancellationToken);
+        }
+
+        public override void Dispose()
+        {
+            GC.SuppressFinalize(this);
+            dispose();
         }
     }
     

@@ -1,7 +1,7 @@
 
 namespace ufs.Impl;
 
-public record class RealFileSystem(string Root, bool ReadOnly) : IFileSystem
+public record class RealFileSystem(string Root, bool ReadOnly = false) : IFileSystem
 {
     public static RealFileSystem AtAppDir<Self>()
     {

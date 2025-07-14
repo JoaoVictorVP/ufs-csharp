@@ -3,8 +3,10 @@ using System.Text;
 
 namespace ufs;
 
-public abstract record class FileEntry(FsPath Path, IFileSystem Fs)
+public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposable
 {
+    public abstract void Dispose();
+
     interface IWritableFile
     {
         FsPath Path { get; }
@@ -63,12 +65,21 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs)
         }
     }
 
+    public abstract record FileWithStream(FsPath Path, IFileSystem Fs, StreamWrapper Inner) : FileEntry(Path, Fs)
+    {
+        public override void Dispose()
+        {
+            GC.SuppressFinalize(this);
+            Inner.Dispose();
+        }
+    }
+
     public record class FileRW(FsPath Path, IFileSystem Fs, StreamWrapper Inner)
-        : FileEntry(Path, Fs), IReadableFile, IWritableFile;
+        : FileWithStream(Path, Fs, Inner), IReadableFile, IWritableFile;
     public record class FileRO(FsPath Path, IFileSystem Fs, StreamWrapper Inner)
-        : FileEntry(Path, Fs), IReadableFile;
+        : FileWithStream(Path, Fs, Inner), IReadableFile;
     public record class FileWO(FsPath Path, IFileSystem Fs, StreamWrapper Inner)
-        : FileEntry(Path, Fs), IWritableFile;
+        : FileWithStream(Path, Fs, Inner), IWritableFile;
 
     public record class FileRef(FsPath Path, IFileSystem Fs) : FileEntry(Path, Fs)
     {
@@ -82,10 +93,16 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs)
             => Fs.FileExists(Path, cancellationToken);
         public Task<bool> Delete(CancellationToken cancellationToken = default)
             => Fs.DeleteFile(Path, cancellationToken);
+        
+        public override void Dispose()
+            => GC.SuppressFinalize(this);
     }
 
     public record class Directory(FsPath Path, IFileSystem Fs) : FileEntry(Path, Fs)
     {
         public readonly IFileSystem At = Fs.At(Path);
+
+        public override void Dispose()
+            => GC.SuppressFinalize(this);
     }
 }
