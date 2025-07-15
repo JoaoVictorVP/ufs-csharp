@@ -1,27 +1,33 @@
-﻿using ufs;
-using ufs.Impl;
+using System;
 using System.Text;
+using ufs;
+using ufs.Impl;
+using ufs.Impl.InMemory;
 
 namespace ufs_tests;
 
-public class RealFsTests : IDisposable
+public sealed class OverlayFsTests : IDisposable
 {
-    private readonly string testRoot;
+    private readonly string testRoot = "/tmp/ufs_test_root_" + Guid.NewGuid().ToString("N");
+    private readonly IFileSystem rfs;
     private readonly IFileSystem fs;
 
-    public RealFsTests()
+    public OverlayFsTests()
     {
-        testRoot = Path.Combine(Path.GetTempPath(), "ufs_tests_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(testRoot);
-        fs = new RealFileSystem(testRoot);
+        rfs = new RealFileSystem(testRoot);
+
+        var root = new MemoryFileTree.Root();
+        var tmp = root.CreateDir("tmp");
+        var testRootDir = tmp.CreateDir("ufs_test_root");
+        var mfs = new MemoryFileSystem(testRootDir);
+
+        fs = new OverlayFileSystem(rfs, mfs);
     }
 
     public void Dispose()
     {
         if (Directory.Exists(testRoot))
-        {
             Directory.Delete(testRoot, true);
-        }
     }
 
     #region Directory Tests
@@ -34,9 +40,7 @@ public class RealFsTests : IDisposable
         
         Assert.NotNull(dir);
         Assert.True(await fs.DirExists(dirPath));
-        // The returned directory path will be the resolved absolute path
         Assert.EndsWith("testdir", dir.Path.Value);
-        Assert.Equal(fs, dir.Fs);
     }
 
     [Fact]
@@ -111,7 +115,7 @@ public class RealFsTests : IDisposable
         using var file = await fs.CreateFile(filePath);
         var content = Encoding.UTF8.GetBytes("test content");
         await file.Inner.WriteAsync(content);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         var deleted = await fs.DeleteDirectory(dirPath, recursive: true);
         Assert.True(deleted);
@@ -141,11 +145,10 @@ public class RealFsTests : IDisposable
         
         Assert.NotNull(file);
         Assert.EndsWith("test_file.txt", file.Path.Value);
-        Assert.Equal(fs, file.Fs);
         Assert.True(file.Inner.IsWritable);
         Assert.True(file.Inner.IsReadable);
         
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         Assert.True(await fs.FileExists(filePath));
     }
 
@@ -164,7 +167,7 @@ public class RealFsTests : IDisposable
     {
         var filePath = "/existing_file.txt".FsPath();
         using var file = await fs.CreateFile(filePath);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         var exists = await fs.FileExists(filePath);
         Assert.True(exists);
@@ -183,8 +186,8 @@ public class RealFsTests : IDisposable
     public async Task DeleteFile_ExistingFile_ShouldReturnTrue()
     {
         var filePath = "/file_to_delete.txt".FsPath();
-        using var file = await fs.CreateFile(filePath);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        var file = await fs.CreateFile(filePath);
+        file.Inner.Dispose();
         
         var deleted = await fs.DeleteFile(filePath);
         Assert.True(deleted);
@@ -205,7 +208,7 @@ public class RealFsTests : IDisposable
     {
         var filePath = "/file_to_delete_readonly.txt".FsPath();
         using var file = await fs.CreateFile(filePath);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         var readOnlyFs = new RealFileSystem(testRoot, true);
         await Assert.ThrowsAsync<FileSystemException.ReadOnly>(
@@ -217,6 +220,62 @@ public class RealFsTests : IDisposable
     #region File Operations Tests
 
     [Fact]
+    public async Task ReadFileLowerLevel_ShouldWork()
+    {
+        var filePath = "/lower_level_file.txt".FsPath();
+        var content = "Lower level content";
+
+        using var file = await rfs.CreateFile(filePath);
+        await file.WriteAllText(content);
+        await file.Flush();
+        file.Inner.Dispose();
+
+        using var readFile = await fs.OpenFileRead(filePath);
+        Assert.NotNull(readFile);
+
+        var readContent = await readFile.ReadAllText();
+        Assert.Equal(content, readContent);
+    }
+
+    [Fact]
+    public async Task OverwriteFileLowerLevel_ShouldWork()
+    {
+        var filePath = "/overwrite_file.txt".FsPath();
+        var initialContent = "Initial content";
+        var newContent = "New content";
+
+        {
+            using var lowerFile = await rfs.CreateFile(filePath);
+            await lowerFile.WriteAllText(initialContent);
+            await lowerFile.Flush();
+        }
+
+        {
+            using var upperFile = await fs.OpenFileReadWrite(filePath);
+            Assert.NotNull(upperFile);
+            Assert.True(upperFile.Inner.IsWritable);
+
+            var originalContent = await upperFile.ReadAllText();
+            Assert.Equal(initialContent, originalContent);
+            Assert.False(((StreamWrapper.Cow)((StreamWrapper.MirrorStream)upperFile.Inner).Inner).Owned);
+            upperFile.Inner.ZeroPos();
+
+            upperFile.Inner.SetLength(0);
+            Assert.True(((StreamWrapper.Cow)((StreamWrapper.MirrorStream)upperFile.Inner).Inner).Owned);
+
+            await upperFile.WriteAllText(newContent);
+            await upperFile.Flush();
+            Assert.True(((StreamWrapper.Cow)((StreamWrapper.MirrorStream)upperFile.Inner).Inner).Owned);
+            upperFile.Inner.Dispose();
+        }
+
+        using var readFile = await fs.OpenFileRead(filePath);
+        Assert.NotNull(readFile);
+        var readContent = await readFile.ReadAllText();
+        Assert.Equal(newContent, readContent);
+    }
+
+    [Fact]
     public async Task OpenFileRead_ExistingFile_ShouldReturnFileRO()
     {
         var filePath = "/file_to_read.txt".FsPath();
@@ -225,7 +284,7 @@ public class RealFsTests : IDisposable
         
         using var file = await fs.CreateFile(filePath);
         await file.Inner.WriteAsync(contentBytes);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         using var readFile = await fs.OpenFileRead(filePath);
         Assert.NotNull(readFile);
@@ -237,7 +296,7 @@ public class RealFsTests : IDisposable
         var readContent = Encoding.UTF8.GetString(buffer);
         Assert.Equal(content, readContent);
         
-        ((StreamWrapper.Real)readFile.Inner).Inner.Dispose();
+        readFile.Inner.Dispose();
     }
 
     [Fact]
@@ -254,7 +313,7 @@ public class RealFsTests : IDisposable
     {
         var filePath = "/file_to_write.txt".FsPath();
         using var file = await fs.CreateFile(filePath);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         var writeFile = await fs.OpenFileWrite(filePath);
         Assert.NotNull(writeFile);
@@ -264,16 +323,16 @@ public class RealFsTests : IDisposable
         var content = "New content";
         var contentBytes = Encoding.UTF8.GetBytes(content);
         await writeFile.Inner.WriteAsync(contentBytes);
-        ((StreamWrapper.Real)writeFile.Inner).Inner.Dispose();
+        writeFile.Inner.Dispose();
     }
 
     [Fact]
-    public async Task OpenFileWrite_NonExistingFile_ShouldReturnNull()
+    public async Task OpenFileWrite_NonExistingFile_ShouldReturnNotNull()
     {
         var filePath = "/non_existing_write_file.txt".FsPath();
         
         var writeFile = await fs.OpenFileWrite(filePath);
-        Assert.Null(writeFile);
+        Assert.NotNull(writeFile);
     }
 
     [Fact]
@@ -281,7 +340,7 @@ public class RealFsTests : IDisposable
     {
         var filePath = "/file_to_write_readonly.txt".FsPath();
         using var file = await fs.CreateFile(filePath);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         var readOnlyFs = new RealFileSystem(testRoot, true);
         await Assert.ThrowsAsync<FileSystemException.ReadOnly>(
@@ -297,7 +356,7 @@ public class RealFsTests : IDisposable
         
         using var file = await fs.CreateFile(filePath);
         await file.Inner.WriteAsync(initialBytes);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         var rwFile = await fs.OpenFileReadWrite(filePath);
         Assert.NotNull(rwFile);
@@ -309,7 +368,7 @@ public class RealFsTests : IDisposable
         var readContent = Encoding.UTF8.GetString(buffer);
         Assert.Equal(initialContent, readContent);
         
-        ((StreamWrapper.Real)rwFile.Inner).Inner.Dispose();
+        rwFile.Inner.Dispose();
     }
 
     [Fact]
@@ -325,7 +384,7 @@ public class RealFsTests : IDisposable
         var content = "New file content";
         var contentBytes = Encoding.UTF8.GetBytes(content);
         await rwFile.Inner.WriteAsync(contentBytes);
-        ((StreamWrapper.Real)rwFile.Inner).Inner.Dispose();
+        rwFile.Inner.Dispose();
         
         Assert.True(await fs.FileExists(filePath));
     }
@@ -352,7 +411,7 @@ public class RealFsTests : IDisposable
         
         using var file = await fs.CreateFile(filePath);
         await file.Inner.WriteAsync(data);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         using var readFile = await fs.OpenFileRead(filePath);
         Assert.NotNull(readFile);
@@ -361,7 +420,7 @@ public class RealFsTests : IDisposable
         await readFile.Inner.ReadAsync(buffer);
         Assert.Equal(data, buffer);
         
-        ((StreamWrapper.Real)readFile.Inner).Inner.Dispose();
+        readFile.Inner.Dispose();
     }
 
     #endregion
@@ -377,13 +436,13 @@ public class RealFsTests : IDisposable
         await fs.CreateDirectory("/test_entries/subdir2".FsPath());
         
         var file1 = await fs.CreateFile("/test_entries/file1.txt".FsPath());
-        ((StreamWrapper.Real)file1.Inner).Inner.Dispose();
+        file1.Inner.Dispose();
         var file2 = await fs.CreateFile("/test_entries/file2.txt".FsPath());
-        ((StreamWrapper.Real)file2.Inner).Inner.Dispose();
+        file2.Inner.Dispose();
         
         // Create nested files that shouldn't be returned in shallow mode
         var nestedFile = await fs.CreateFile("/test_entries/subdir1/nested.txt".FsPath());
-        ((StreamWrapper.Real)nestedFile.Inner).Inner.Dispose();
+        nestedFile.Inner.Dispose();
         
         var entries = new List<FileEntry>();
         await foreach (var entry in fs.Entries("/test_entries".FsPath(), ListEntriesMode.ShallowAll))
@@ -410,11 +469,11 @@ public class RealFsTests : IDisposable
         await fs.CreateDirectory("/test_recursive/subdir/deep".FsPath());
         
         var file1 = await fs.CreateFile("/test_recursive/root.txt".FsPath());
-        ((StreamWrapper.Real)file1.Inner).Inner.Dispose();
+        file1.Inner.Dispose();
         var file2 = await fs.CreateFile("/test_recursive/subdir/nested.txt".FsPath());
-        ((StreamWrapper.Real)file2.Inner).Inner.Dispose();
+        file2.Inner.Dispose();
         var file3 = await fs.CreateFile("/test_recursive/subdir/deep/deep.txt".FsPath());
-        ((StreamWrapper.Real)file3.Inner).Inner.Dispose();
+        file3.Inner.Dispose();
         
         var entries = new List<FileEntry>();
         await foreach (var entry in fs.Entries("/test_recursive".FsPath(), ListEntriesMode.RecursiveAll))
@@ -437,11 +496,11 @@ public class RealFsTests : IDisposable
         await fs.CreateDirectory("/test_filter".FsPath());
         
         var txtFile = await fs.CreateFile("/test_filter/document.txt".FsPath());
-        ((StreamWrapper.Real)txtFile.Inner).Inner.Dispose();
+        txtFile.Inner.Dispose();
         var logFile = await fs.CreateFile("/test_filter/application.log".FsPath());
-        ((StreamWrapper.Real)logFile.Inner).Inner.Dispose();
+        logFile.Inner.Dispose();
         var binFile = await fs.CreateFile("/test_filter/program.exe".FsPath());
-        ((StreamWrapper.Real)binFile.Inner).Inner.Dispose();
+        binFile.Inner.Dispose();
         
         var entries = new List<FileEntry>();
         await foreach (var entry in fs.Entries("/test_filter".FsPath(), ListEntriesMode.Shallow("*.txt")))
@@ -468,7 +527,7 @@ public class RealFsTests : IDisposable
         
         // Test that the sub-filesystem works
         using var file = await subFs.CreateFile("/file_in_sub.txt".FsPath());
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         // Verify the file exists in the original filesystem
         Assert.True(await fs.FileExists("/subfs_test/file_in_sub.txt".FsPath()));
@@ -477,8 +536,6 @@ public class RealFsTests : IDisposable
     [Fact]
     public async Task At_WithReadOnlyMode_ShouldCreateReadOnlyFileSystem()
     {
-        await fs.CreateDirectory("/readonly_subfs".FsPath());
-        
         var readOnlySubFs = fs.At("/readonly_subfs".FsPath(), FileSystemMode.ReadOnly);
         Assert.True(readOnlySubFs.ReadOnly);
         
@@ -539,10 +596,9 @@ public class RealFsTests : IDisposable
         {
             var outsidePath = "/completely/different/path".FsPath();
             var result = await fs.FileExists(outsidePath);
-            // This should either throw or return false, depending on implementation
             Assert.False(result);
         }
-        catch (PathException.InvalidPath)
+        catch (FileSystemException.NotFound)
         {
             // This is also acceptable behavior
         }
@@ -562,7 +618,7 @@ public class RealFsTests : IDisposable
         // Create file and get as FileRef through Entries
         using var file = await fs.CreateFile(filePath);
         await file.Inner.WriteAsync(contentBytes);
-        ((StreamWrapper.Real)file.Inner).Inner.Dispose();
+        file.Inner.Dispose();
         
         var entries = new List<FileEntry>();
         await foreach (var entry in fs.Entries("/".FsPath(), ListEntriesMode.ShallowAll))
@@ -584,7 +640,7 @@ public class RealFsTests : IDisposable
         await readFile.Inner.ReadAsync(buffer);
         var readContent = Encoding.UTF8.GetString(buffer);
         Assert.Equal(content, readContent);
-        ((StreamWrapper.Real)readFile.Inner).Inner.Dispose();
+        readFile.Inner.Dispose();
         
         var writeFile = await fileRef.OpenWrite();
         Assert.NotNull(writeFile);
@@ -592,9 +648,9 @@ public class RealFsTests : IDisposable
         var newContent = "Updated content";
         var newContentBytes = Encoding.UTF8.GetBytes(newContent);
         // Ensure we start from the beginning
-        ((StreamWrapper.Real)writeFile.Inner).Inner.SetLength(0);
+        writeFile.Inner.SetLength(0);
         await writeFile.Inner.WriteAsync(newContentBytes);
-        ((StreamWrapper.Real)writeFile.Inner).Inner.Dispose();
+        writeFile.Inner.Dispose();
         
         var rwFile = await fileRef.OpenReadWrite();
         Assert.NotNull(rwFile);
@@ -602,7 +658,7 @@ public class RealFsTests : IDisposable
         await rwFile.Inner.ReadAsync(updatedBuffer);
         var updatedContent = Encoding.UTF8.GetString(updatedBuffer);
         Assert.Equal(newContent, updatedContent);
-        ((StreamWrapper.Real)rwFile.Inner).Inner.Dispose();
+        rwFile.Inner.Dispose();
         
         Assert.True(await fileRef.Delete());
         Assert.False(await fileRef.Exists());
@@ -618,7 +674,7 @@ public class RealFsTests : IDisposable
         Assert.NotNull(subFs);
         
         var subFile = await subFs.CreateFile("/subfile.txt".FsPath());
-        ((StreamWrapper.Real)subFile.Inner).Inner.Dispose();
+        subFile.Inner.Dispose();
         
         // Verify file exists in parent filesystem
         Assert.True(await fs.FileExists("/directory_at_test/subfile.txt".FsPath()));

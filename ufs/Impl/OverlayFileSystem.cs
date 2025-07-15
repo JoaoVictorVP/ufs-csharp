@@ -1,54 +1,54 @@
 
 namespace ufs.Impl;
 
-public record class OverlayFileSystem(IFileSystem Base, IFileSystem Overlay)
+public record class OverlayFileSystem(IFileSystem Lower, IFileSystem Upper)
     : IFileSystem
 {
-    public bool ReadOnly => Overlay.ReadOnly;
+    public bool ReadOnly => Upper.ReadOnly;
 
     public IFileSystem At(FsPath path, FileSystemMode mode = FileSystemMode.Inherit)
     {
-        var baseDir = Base.At(path, mode);
-        var overlayDir = Overlay.At(path, mode);
-        return new OverlayFileSystem(baseDir, overlayDir);
+        var lowerDir = Lower.At(path, mode);
+        var upperDir = Upper.At(path, mode);
+        return new OverlayFileSystem(lowerDir, upperDir);
     }
 
     public Task<FileEntry.Directory> CreateDirectory(FsPath path, CancellationToken cancellationToken = default)
     {
-        return Overlay.CreateDirectory(path, cancellationToken);
+        return Upper.CreateDirectory(path, cancellationToken);
     }
 
     public Task<FileEntry.FileRW> CreateFile(FsPath path, CancellationToken cancellationToken = default)
     {
-        return Overlay.CreateFile(path, cancellationToken);
+        return Upper.CreateFile(path, cancellationToken);
     }
 
     public Task<bool> DeleteDirectory(FsPath path, bool recursive = false, CancellationToken cancellationToken = default)
     {
-        return Overlay.DeleteDirectory(path, recursive, cancellationToken);
+        return Upper.DeleteDirectory(path, recursive, cancellationToken);
     }
 
     public Task<bool> DeleteFile(FsPath path, CancellationToken cancellationToken = default)
     {
-        return Overlay.DeleteFile(path, cancellationToken);
+        return Upper.DeleteFile(path, cancellationToken);
     }
 
     public async Task<bool> DirExists(FsPath path, CancellationToken cancellationToken = default)
     {
-        return await Overlay.DirExists(path, cancellationToken)
-            || await Base.DirExists(path, cancellationToken);
+        return await Upper.DirExists(path, cancellationToken)
+            || await Lower.DirExists(path, cancellationToken);
     }
 
     public async IAsyncEnumerable<FileEntry> Entries(FsPath path, ListEntriesMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var listed = new HashSet<FsPath>();
-        await foreach (var entry in Overlay.Entries(path, mode, cancellationToken))
+        await foreach (var entry in Upper.Entries(path, mode, cancellationToken))
         {
             listed.Add(entry.Path);
             yield return entry;
         }
 
-        await foreach (var entry in Base.Entries(path, mode, cancellationToken))
+        await foreach (var entry in Lower.Entries(path, mode, cancellationToken))
         {
             if (listed.Contains(entry.Path))
                 continue;
@@ -66,41 +66,41 @@ public record class OverlayFileSystem(IFileSystem Base, IFileSystem Overlay)
 
     public async Task<FileStatus> FileStat(FsPath path, CancellationToken cancellationToken = default)
     {
-        var overlayStatus = await Overlay.FileStat(path, cancellationToken);
+        var overlayStatus = await Upper.FileStat(path, cancellationToken);
         if (overlayStatus is FileStatus.NotFound)
-            return await Base.FileStat(path, cancellationToken);
+            return await Lower.FileStat(path, cancellationToken);
         return overlayStatus;
     }
 
     public Task<FileEntry.FileRW> Integrate(FileEntry.IReadableFile file, CancellationToken cancellationToken = default)
     {
-        return Overlay.Integrate(file, cancellationToken);
+        return Upper.Integrate(file, cancellationToken);
     }
 
     public async Task<FileEntry.FileRO?> OpenFileRead(FsPath path, CancellationToken cancellationToken = default)
     {
-        return await Overlay.OpenFileRead(path, cancellationToken)
-            ?? await Base.OpenFileRead(path, cancellationToken);
+        return await Upper.OpenFileRead(path, cancellationToken)
+            ?? await Lower.OpenFileRead(path, cancellationToken);
     }
 
     public async Task<FileEntry.FileRW?> OpenFileReadWrite(FsPath path, CancellationToken cancellationToken = default)
     {
-        if (await Overlay.FileExists(path, cancellationToken))
-            return await Overlay.OpenFileReadWrite(path, cancellationToken);
-        var baseFile = await Base.OpenFileRead(path, cancellationToken);
-        if (baseFile is null)
-            return null;
-        return await Overlay.Integrate(baseFile, cancellationToken);
+        if (await Upper.FileExists(path, cancellationToken))
+            return await Upper.OpenFileReadWrite(path, cancellationToken);
+        var lowerFile = await Lower.OpenFileRead(path, cancellationToken);
+        if (lowerFile is null)
+            return await Upper.CreateFile(path, cancellationToken);
+        return await Upper.Integrate(lowerFile, cancellationToken);
     }
 
     public async Task<FileEntry.FileWO?> OpenFileWrite(FsPath path, CancellationToken cancellationToken = default)
     {
-        if (await Overlay.FileExists(path, cancellationToken))
-            return await Overlay.OpenFileWrite(path, cancellationToken);
-        var baseFile = await Base.OpenFileRead(path, cancellationToken);
-        if (baseFile is null)
-            return null;
-        var overlayRw = await Overlay.Integrate(baseFile, cancellationToken);
-        return overlayRw.WriteOnly();
+        if (await Upper.FileExists(path, cancellationToken))
+            return await Upper.OpenFileWrite(path, cancellationToken);
+        var lowerFile = await Lower.OpenFileRead(path, cancellationToken);
+        if (lowerFile is null)
+            return (await Upper.CreateFile(path, cancellationToken)).WriteOnly();
+        var upperRw = await Upper.Integrate(lowerFile, cancellationToken);
+        return upperRw.WriteOnly();
     }
 }

@@ -8,7 +8,11 @@ public abstract record class StreamWrapper : IDisposable
     public abstract bool IsWritable { get; }
     public abstract long Length { get; }
 
-    public abstract long Position { get; }
+    public abstract long Position { get; set; }
+
+    public abstract bool Owned { get; }
+
+    public abstract void SetLength(long value);
 
     public abstract Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default);
     public abstract Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default);
@@ -20,9 +24,22 @@ public abstract record class StreamWrapper : IDisposable
     public abstract void Dispose();
 
     public Cow CopyOnWrite(Func<StreamWrapper> create)
+        => new(this, create);
+    
+    public StreamWrapper ZeroPos()
     {
-        return new Cow(this, create);
+        Position = 0;
+        return this;
     }
+
+    public MirrorStream Mirror()
+        => new(this);
+    
+    public ReadOnlyStream ReadOnly()
+        => new(this);
+    
+    public WriteOnlyStream WriteOnly()
+        => new(this);
 
     public record Real(Stream Inner) : StreamWrapper
     {
@@ -30,7 +47,25 @@ public abstract record class StreamWrapper : IDisposable
         public override bool IsWritable => Inner.CanWrite;
         public override long Length => Inner.Length;
 
-        public override long Position => Inner.Position;
+        public override long Position
+        {
+            get => Inner.Position;
+            set
+            {
+                if (disposed)
+                    return;
+                Inner.Position = value;
+            }
+        }
+
+        public override bool Owned => true;
+
+        public override void SetLength(long value)
+        {
+            if (disposed)
+                return;
+            Inner.SetLength(value);
+        }
 
         public override async Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
@@ -57,8 +92,13 @@ public abstract record class StreamWrapper : IDisposable
             }
         }
 
+        bool disposed;
         public override void Dispose()
         {
+            if (disposed)
+                return;
+            disposed = true;
+            GC.SuppressFinalize(this);
             Inner.Dispose();
         }
 
@@ -72,9 +112,11 @@ public abstract record class StreamWrapper : IDisposable
         Func<bool> isWritable,
         Func<long> length,
         Func<long> position,
+        Action<long>? setPosition,
         Func<Memory<byte>, CancellationToken, Task<int>> readAsync,
         Func<ReadOnlyMemory<byte>, CancellationToken, Task> writeAsync,
         Action dispose,
+        Action<long>? setLength = null,
         Func<Task>? flushAsync = null
     ) : StreamWrapper
     {
@@ -82,16 +124,27 @@ public abstract record class StreamWrapper : IDisposable
         private readonly Func<bool> isWritable = isWritable;
         private readonly Func<long> length = length;
         private readonly Func<long> position = position;
+        private readonly Action<long>? setPosition = setPosition;
         private readonly Func<Memory<byte>, CancellationToken, Task<int>> readAsync = readAsync;
         private readonly Func<ReadOnlyMemory<byte>, CancellationToken, Task> writeAsync = writeAsync;
         private readonly Func<Task>? flushAsync = flushAsync;
         private readonly Action dispose = dispose;
+        private readonly Action<long>? setLength = setLength;
 
         public override bool IsReadable => isReadable();
         public override bool IsWritable => isWritable();
         public override long Length => length();
 
-        public override long Position => position();
+        public override bool Owned => false;
+
+        public override long Position
+        {
+            get => position();
+            set => setPosition?.Invoke(value);
+        }
+
+        public override void SetLength(long value)
+            => setLength?.Invoke(value);
 
         public override async Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
@@ -130,10 +183,29 @@ public abstract record class StreamWrapper : IDisposable
         private StreamWrapper Inner { get; set; } = Origin;
 
         public override bool IsReadable => Inner.IsReadable;
-        public override bool IsWritable => Inner.IsWritable;
+        public override bool IsWritable => true;
         public override long Length => Inner.Length;
 
-        public override long Position => Inner.Position;
+        public override long Position
+        {
+            get => Inner.Position;
+            set => Inner.Position = value;
+        }
+
+        public override bool Owned => Inner != Origin;
+
+        public override void SetLength(long value)
+        {
+            if (Inner == Origin)
+            {
+                var next = Create();
+                next.Position = Inner.Position;
+                Inner = next;
+                if (next.IsWritable is false)
+                    throw new InvalidOperationException("Cannot set length on a read-only stream.");
+            }
+            Inner.SetLength(value);
+        }
 
         public override Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
@@ -144,10 +216,12 @@ public abstract record class StreamWrapper : IDisposable
             if (Inner == Origin)
             {
                 var next = Create();
+                long ogPos = Inner.Position;
                 Inner = next;
                 if (next.IsWritable is false)
                     throw new InvalidOperationException("Cannot write to a read-only stream.");
                 await Origin.CopyToAsync(next, cancellationToken);
+                next.Position = ogPos;
             }
             await Inner.WriteAsync(buffer, cancellationToken);
         }
@@ -176,6 +250,129 @@ public abstract record class StreamWrapper : IDisposable
         }
     }
 
+    public record MirrorStream(StreamWrapper Inner) : StreamWrapper
+    {
+        public override bool IsReadable => Inner.IsReadable;
+        public override bool IsWritable => Inner.IsWritable;
+        public override long Length => Inner.Length;
+
+        public override long Position
+        {
+            get => Inner.Position;
+            set => Inner.Position = value;
+        }
+
+        public override bool Owned => false;
+
+        public override void SetLength(long value)
+            => Inner.SetLength(value);
+
+        public override Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            return Inner.ReadAsync(buffer, cancellationToken);
+        }
+        public override async Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Inner.WriteAsync(buffer, cancellationToken);
+        }
+
+        public override Task Flush(CancellationToken cancellationToken = default)
+        {
+            return Inner.Flush(cancellationToken);
+        }
+
+        public override Task CopyToAsync(StreamWrapper destination, CancellationToken cancellationToken = default)
+        {
+            return Inner.CopyToAsync(destination, cancellationToken);
+        }
+
+        public override void Dispose()
+        {
+            GC.SuppressFinalize(this);
+            Position = 0;
+        }
+    }
+
+    public record ReadOnlyStream(StreamWrapper Inner) : StreamWrapper
+    {
+        public override bool IsReadable => Inner.IsReadable;
+        public override bool IsWritable => false; // Read-only stream
+        public override long Length => Inner.Length;
+
+        public override long Position
+        {
+            get => Inner.Position;
+            set => throw new NotSupportedException("Cannot set position on a read-only stream.");
+        }
+
+        public override bool Owned => Inner.Owned;
+
+        public override void SetLength(long value)
+            => throw new NotSupportedException("Cannot set length on a read-only stream.");
+
+        public override Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            return Inner.ReadAsync(buffer, cancellationToken);
+        }
+        
+        public override Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Cannot write to a read-only stream.");
+
+        public override Task Flush(CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public override void Dispose()
+        {
+            GC.SuppressFinalize(this);
+            Inner.Dispose();
+        }
+
+        public override Task CopyToAsync(StreamWrapper destination, CancellationToken cancellationToken = default)
+        {
+            return Inner.CopyToAsync(destination, cancellationToken);
+        }
+    }
+
+    public record WriteOnlyStream(StreamWrapper Inner) : StreamWrapper
+    {
+        public override bool IsReadable => false;
+        public override bool IsWritable => Inner.IsWritable;
+        public override long Length => Inner.Length;
+
+        public override long Position
+        {
+            get => Inner.Position;
+            set => Inner.Position = value;
+        }
+
+        public override bool Owned => Inner.Owned;
+
+        public override void SetLength(long value)
+            => Inner.SetLength(value);
+
+        public override Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Cannot read from a write-only stream.");
+
+        public override async Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Inner.WriteAsync(buffer, cancellationToken);
+        }
+
+        public override Task Flush(CancellationToken cancellationToken = default)
+            => Inner.Flush(cancellationToken);
+
+        public override void Dispose()
+        {
+            GC.SuppressFinalize(this);
+            Inner.Dispose();
+        }
+
+        public override Task CopyToAsync(StreamWrapper destination, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("Cannot copy from a write-only stream.");
+        }
+    }
+
     public static implicit operator StreamWrapper(Stream real) => new Real(real);
 
     public BackedStream GetBackedStream()
@@ -197,7 +394,7 @@ public abstract record class StreamWrapper : IDisposable
         public override long Position
         {
             get => wrapper.Position;
-            set => throw new NotImplementedException();
+            set => wrapper.Position = value;
         }
 
         public override void Flush()

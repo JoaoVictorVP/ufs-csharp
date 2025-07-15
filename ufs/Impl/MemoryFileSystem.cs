@@ -20,24 +20,34 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
         };
         if (nextReadOnly is false && ReadOnly)
             throw new FileSystemException.ReadOnly(path.Value);
-        var (treeDir, _) = CreateDirectorySync(path.DirectoryPath, nextReadOnly);
+        var (treeDir, _) = CreateDirectorySync(path, nextReadOnly);
         return new MemoryFileSystem(treeDir);
     }
 
     (MemoryFileTree.Directory treeDir, FileEntry.Directory dir) CreateDirectorySync(FsPath path, bool readOnly = false)
     {
-        var lastExistingDir = Root.RecursiveWalk(path)
-            .Where(dir => dir is not null)
+        var (lastExistingDir, needToCreateDirs) = Root.RecursiveWalk(path)
+            .Where(pair => pair.dir is not null)
             .LastOrDefault();
         if (lastExistingDir is null)
             throw new FileSystemException.NotFound(path.Value);
         if (lastExistingDir.ReadOnly)
             throw new FileSystemException.ReadOnly(path.Value);
+        if(needToCreateDirs.IsEmpty)
+            return (lastExistingDir, new FileEntry.Directory(path, this));
+        var currentDirName = needToCreateDirs.Span[0];
+        needToCreateDirs = needToCreateDirs[1..];
         var directory =
-            lastExistingDir.Path() == path
+            lastExistingDir.Path().Value == path.FullPath(Root.Path().Value)
                 ? lastExistingDir
-                : lastExistingDir.CreateDir(path.FileName.ToString(), readOnly);
-        return (directory, new FileEntry.Directory(directory.Path(), this));
+                : lastExistingDir.CreateDir(currentDirName.Span.ToString(), readOnly);
+        while(needToCreateDirs.IsEmpty is false)
+        {
+            currentDirName = needToCreateDirs.Span[0];
+            needToCreateDirs = needToCreateDirs[1..];
+            directory = directory.CreateDir(currentDirName.Span.ToString(), readOnly);
+        }
+        return (directory, new FileEntry.Directory(path, this));
     }
     public Task<FileEntry.Directory> CreateDirectory(FsPath path, CancellationToken cancellationToken = default)
     {
@@ -47,34 +57,31 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
 
     public Task<FileEntry.FileRW> CreateFile(FsPath path, CancellationToken cancellationToken = default)
     {
-        _ = path.Resolve(Root.Path().Value, Root.Path().Value)
-            ?? throw new PathException.InvalidPath(path.Value);
-        var dir = Root.RecursiveWalk(path.DirectoryPath)
-            .Where(dir => dir is not null && dir.Path() == path.DirectoryPath)
-            .LastOrDefault()
-            ?? throw new FileSystemException.NotFound(path.Value);
+        var (dir, _) = CreateDirectorySync(path.DirectoryPath);
+        if (dir is null)
+            throw new FileSystemException.NotFound(path.DirectoryPath.Value);
         if (dir.ReadOnly)
-            throw new FileSystemException.ReadOnly(path.Value);
+                throw new FileSystemException.ReadOnly(path.Value);
         var file = dir.CreateFile(path.FileName.ToString(), new MemoryStream(8192));
-        return Task.FromResult(new FileEntry.FileRW(file.Path(), this, file.Stream));
+        return Task.FromResult(new FileEntry.FileRW(path, this, file.Stream.Mirror()));
     }
 
     public Task<bool> DeleteDirectory(FsPath path, bool recursive = false, CancellationToken cancellationToken = default)
     {
-        var (treeDir, _) = CreateDirectorySync(path.DirectoryPath, false);
-        if (treeDir is null)
-            throw new FileSystemException.NotFound(path.Value);
-        if (treeDir.ReadOnly)
-            throw new FileSystemException.ReadOnly(path.Value);
-        Root.DeleteDir(treeDir);
+        var baseDir = Root.FindDirectory(path.DirectoryPath)
+            ?? throw new FileSystemException.NotFound(path.Value);
+        var treeDir = baseDir.GetDirectory(path.FileName.ToString());
+        if(treeDir is null)
+            return Task.FromResult(false);
+        if (baseDir.ReadOnly)
+                throw new FileSystemException.ReadOnly(path.Value);
+        baseDir.DeleteDir(treeDir);
         return Task.FromResult(true);
     }
 
     public Task<bool> DeleteFile(FsPath path, CancellationToken cancellationToken = default)
     {
-        var dir = Root.RecursiveWalk(path.DirectoryPath)
-            .Where(dir => dir is not null && dir.Path() == path.DirectoryPath)
-            .LastOrDefault();
+        var dir = Root.FindDirectory(path.DirectoryPath);
         if (dir is null)
             throw new FileSystemException.NotFound(path.Value);
         if (dir.ReadOnly)
@@ -83,7 +90,7 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
         if (file is null)
         {
             Root.TombstoneFile(path);
-            return Task.FromResult(true);
+            return Task.FromResult(false);
         }
         Root.DeleteFile(file);
         return Task.FromResult(true);
@@ -91,20 +98,15 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
 
     public Task<bool> DirExists(FsPath path, CancellationToken cancellationToken = default)
     {
-        var dir = Root.RecursiveWalk(path)
-            .Where(dir => dir is not null && dir.Path() == path)
-            .LastOrDefault();
+        var dir = Root.FindDirectory(path);
         return Task.FromResult(dir is not null);
     }
 
     public async IAsyncEnumerable<FileEntry> Entries(FsPath path, ListEntriesMode mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         await Task.Yield();
-        var localRoot = Root.RecursiveWalk(path)
-            .Where(dir => dir is not null && dir.Path() == path)
-            .LastOrDefault();
-        if (localRoot is null)
-            throw new FileSystemException.NotFound(path.Value);
+        var localRoot = Root.FindDirectory(path)
+            ?? throw new FileSystemException.NotFound(path.Value);
 
         static string ToPattern(string filter)
         {
@@ -137,18 +139,32 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
                 .Replace("/", @"\/");
         }
 
+        var rootPath = Root.Path();
+        FsPath RelativePath(FsPath fullPath)
+        {
+            int rootLen = rootPath.Value switch
+            {
+                [.., '/'] => rootPath.Value.Length - 1,
+                _ => rootPath.Value.Length
+            };
+            var entryPath = (fullPath.Value.StartsWith(rootPath.Value)
+                ? fullPath.Value[rootLen..]
+                : fullPath.Value).FsPath();
+            return entryPath;
+        }
+
         switch (mode)
         {
             case ListEntriesMode.ShallowMode shallow:
                 foreach (var dir in localRoot.Directories.Values)
                 {
                     if (shallow.IsAll || Regex.IsMatch(dir.Name.ToString(), ToPattern(shallow.Filter), RegexOptions.IgnoreCase))
-                        yield return new FileEntry.Directory(dir.Path(), this);
+                        yield return new FileEntry.Directory(RelativePath(dir.Path()), this);
                 }
                 foreach (var file in localRoot.Files.Values)
                 {
                     if (shallow.IsAll || Regex.IsMatch(file.Name.ToString(), ToPattern(shallow.Filter), RegexOptions.IgnoreCase))
-                        yield return new FileEntry.FileRef(file.Path(), this);
+                        yield return new FileEntry.FileRef(RelativePath(file.Path()), this);
                 }
                 break;
             case ListEntriesMode.RecursiveMode recursive:
@@ -157,10 +173,10 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
                     switch (entry)
                     {
                         case MemoryFileTree.Directory dir when recursive.IsAll || Regex.IsMatch(dir.Name.ToString(), ToPattern(recursive.Filter), RegexOptions.IgnoreCase):
-                            yield return new FileEntry.Directory(dir.Path(), this);
+                            yield return new FileEntry.Directory(RelativePath(dir.Path()), this);
                             break;
                         case MemoryFileTree.File file when recursive.IsAll || Regex.IsMatch(file.Name.ToString(), ToPattern(recursive.Filter), RegexOptions.IgnoreCase):
-                            yield return new FileEntry.FileRef(file.Path(), this);
+                            yield return new FileEntry.FileRef(RelativePath(file.Path()), this);
                             break;
                     }
                 }
@@ -172,11 +188,8 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
 
     public Task<bool> FileExists(FsPath path, CancellationToken cancellationToken = default)
     {
-        var dir = Root.RecursiveWalk(path.DirectoryPath)
-            .Where(dir => dir is not null)
-            .LastOrDefault();
-        if (dir is null)
-            throw new FileSystemException.NotFound(path.Value);
+        var dir = Root.FindDirectory(path.DirectoryPath)
+            ?? throw new FileSystemException.NotFound(path.Value);
         return Task.FromResult(dir.GetFile(path.FileName.ToString()) is not null);
     }
 
@@ -194,20 +207,17 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
         else
             treeFile.SwapStream(fileCow);
 
-        return Task.FromResult(new FileEntry.FileRW(treeFile.Path(), this, treeFile.Stream));
+        return Task.FromResult(new FileEntry.FileRW(treeFile.Path(), this, treeFile.Stream.ZeroPos().Mirror()));
     }
 
     public Task<FileEntry.FileRO?> OpenFileRead(FsPath path, CancellationToken cancellationToken = default)
     {
-        var dir = Root.RecursiveWalk(path.DirectoryPath)
-            .Where(dir => dir is not null)
-            .LastOrDefault();
-        if (dir is null)
-            throw new FileSystemException.NotFound(path.Value);
+        var dir = Root.FindDirectory(path.DirectoryPath)
+            ?? throw new FileSystemException.NotFound(path.Value);
         var file = dir.GetFile(path.FileName.ToString());
         if (file is null)
             return Task.FromResult<FileEntry.FileRO?>(null);
-        return Task.FromResult(new FileEntry.FileRO(file.Path(), this, file.Stream))!;
+        return Task.FromResult(new FileEntry.FileRO(file.Path(), this, file.Stream.ZeroPos().Mirror().ReadOnly()))!;
     }
 
     public Task<FileEntry.FileRW?> OpenFileReadWrite(FsPath path, CancellationToken cancellationToken = default)
@@ -220,30 +230,27 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
         var file = dir.GetFile(path.FileName.ToString());
         if (file is null)
             return CreateFile(path, cancellationToken)!;
-        return Task.FromResult(new FileEntry.FileRW(file.Path(), this, file.Stream))!;
+        return Task.FromResult(new FileEntry.FileRW(file.Path(), this, file.Stream.ZeroPos().Mirror()))!;
     }
 
     public Task<FileEntry.FileWO?> OpenFileWrite(FsPath path, CancellationToken cancellationToken = default)
     {
         if (ReadOnly)
             throw new FileSystemException.ReadOnly(path.Value);
-        var dir = Root.RecursiveWalk(path.DirectoryPath)
-            .Where(dir => dir is not null)
-            .LastOrDefault();
-        if (dir is null)
-            throw new FileSystemException.NotFound(path.Value);
+        var dir = Root.FindDirectory(path.DirectoryPath)
+            ?? throw new FileSystemException.NotFound(path.Value);
         if (dir.ReadOnly)
             throw new FileSystemException.ReadOnly(path.Value);
         var file = dir.GetFile(path.FileName.ToString());
         if (file is null)
         {
             var createdFile = dir.CreateFile(path.FileName.ToString(), new MemoryStream(8192));
-            return Task.FromResult(new FileEntry.FileWO(createdFile.Path(), this, createdFile.Stream))!;
+            return Task.FromResult(new FileEntry.FileWO(createdFile.Path(), this, createdFile.Stream.ZeroPos().Mirror().WriteOnly()))!;
         }
         var stream = file.Stream;
         if (stream.IsWritable is false)
             throw new FileSystemException.Forbidden(file.Path().Value);
-        return Task.FromResult(new FileEntry.FileWO(file.Path(), this, stream))!;
+        return Task.FromResult(new FileEntry.FileWO(file.Path(), this, stream.ZeroPos().Mirror().WriteOnly()))!;
     }
 
     public async Task<FileStatus> FileStat(FsPath path, CancellationToken cancellationToken = default)

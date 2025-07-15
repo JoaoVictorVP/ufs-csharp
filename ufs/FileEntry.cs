@@ -18,7 +18,7 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
             await Inner.WriteAsync(buffer, cancellationToken);
         }
 
-        async Task WriteAllText(string text, Encoding? encoding = null, CancellationToken cancellationToken = default)
+        public async Task WriteAllText(string text, Encoding? encoding = null, CancellationToken cancellationToken = default)
         {
             encoding ??= Encoding.UTF8;
             var bytes = encoding.GetBytes(text);
@@ -26,6 +26,11 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
             var buffer = memOwner.Memory[..bytes.Length];
             bytes.CopyTo(buffer.Span);
             await Inner.WriteAsync(buffer, cancellationToken);
+        }
+
+        public async Task Flush(CancellationToken cancellationToken = default)
+        {
+            await Inner.Flush(cancellationToken);
         }
     }
     public interface IReadableFile
@@ -39,7 +44,7 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
             return await Inner.ReadAsync(buffer, cancellationToken);
         }
 
-        async Task<Memory<byte>> ReadAllBytes(CancellationToken cancellationToken = default)
+        public async Task<Memory<byte>> ReadAllBytes(CancellationToken cancellationToken = default)
         {
             var len = Inner.Length;
             var buffer = new byte[len].AsMemory();
@@ -50,7 +55,7 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
             return buffer;
         }
 
-        async Task<string> ReadAllText(Encoding? encoding = null, CancellationToken cancellationToken = default)
+        public async Task<string> ReadAllText(Encoding? encoding = null, CancellationToken cancellationToken = default)
         {
             encoding ??= Encoding.UTF8;
             var len = Inner.Length;
@@ -78,9 +83,9 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
         : FileWithStream(Path, Fs, Inner), IReadableFile, IWritableFile
     {
         public FileRO ReadOnly()
-            => new(Path, Fs, Inner);
+            => new(Path, Fs, Inner.ReadOnly());
         public FileWO WriteOnly()
-            => new(Path, Fs, Inner);
+            => new(Path, Fs, Inner.WriteOnly());
     }
     public record class FileRO(FsPath Path, IFileSystem Fs, StreamWrapper Inner)
         : FileWithStream(Path, Fs, Inner), IReadableFile;
@@ -106,9 +111,37 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
 
     public record class Directory(FsPath Path, IFileSystem Fs) : FileEntry(Path, Fs)
     {
-        public readonly IFileSystem At = Fs.At(Path);
+        private IFileSystem? at;
+        public IFileSystem At()
+        {
+            return at ??= Path switch
+            {
+                { IsRoot: true } => Fs,
+                _ => Fs.At(Path, FileSystemMode.Inherit)
+            };
+        }
 
         public override void Dispose()
             => GC.SuppressFinalize(this);
+    }
+}
+public static class FileEntryExtensions
+{
+    public static async Task<string> ReadAllText(this FileEntry.IReadableFile file, Encoding? encoding = null, CancellationToken cancellationToken = default)
+    {
+        return await file.ReadAllText(encoding, cancellationToken);
+    }
+    public static async Task<Memory<byte>> ReadAllBytes(this FileEntry.IReadableFile file, CancellationToken cancellationToken = default)
+    {
+        return await file.ReadAllBytes(cancellationToken);
+    }
+
+    public static async Task WriteAllText(this FileEntry.IWritableFile file, string text, Encoding? encoding = null, CancellationToken cancellationToken = default)
+    {
+        await file.WriteAllText(text, encoding, cancellationToken);
+    }
+    public static async Task Flush(this FileEntry.IWritableFile file, CancellationToken cancellationToken = default)
+    {
+        await file.Flush(cancellationToken);
     }
 }

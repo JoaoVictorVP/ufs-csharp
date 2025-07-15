@@ -55,18 +55,34 @@ public abstract class MemoryFileTree
             return new FsPath(name);
         }
 
-        public IEnumerable<Directory?> RecursiveWalk(FsPath path)
+        public IEnumerable<(Directory? dir, ReadOnlyMemory<ReadOnlyMemory<char>>)> RecursiveWalk(FsPath path)
         {
-            yield return this;
+            var segments = path.Segments(Path()).ToArray().AsMemory();
+            yield return (this, segments);
+            var cur = this;
+            while (segments.IsEmpty is false)
+            {
+                var segment = segments.Span[0];
+                if (cur.GetDirectory(segment.Span.ToString()) is not { } next)
+                    yield break;
+                cur = next;
+                segments = segments[1..];
+                yield return (cur, segments);
+            }
+        }
+        public Directory? FindDirectory(FsPath path)
+        {
+            if(path.IsRoot)
+                return this;
             var segments = path.Segments(Path()).GetEnumerator();
             var cur = this;
             while (segments.MoveNext())
             {
                 if (cur.GetDirectory(segments.Current.Span.ToString()) is not { } next)
-                    yield break;
+                    return null;
                 cur = next;
-                yield return cur;
             }
+            return cur;
         }
 
         public IEnumerable<File> RecursiveFiles()
@@ -107,6 +123,8 @@ public abstract class MemoryFileTree
 
         public Directory CreateDir(string name, bool readOnly = false)
         {
+            if(name.Contains('/') || name.Contains('\\'))
+                throw new ArgumentException("Directory name cannot contain slashes.", nameof(name));
             if (ReadOnly)
                 throw new FileSystemException.ReadOnly(Name);
             if (readOnly is false && ReadOnly)
@@ -126,7 +144,10 @@ public abstract class MemoryFileTree
                 throw new ArgumentNullException(nameof(stream));
             var existing = GetFile(name);
             if (existing is not null)
+            {
+                existing.SwapStream(stream);
                 return existing;
+            }
             var file = new File(name, stream, this);
             Files[name] = file;
             var tombstones = GetRoot().Tombstones;
@@ -141,7 +162,7 @@ public abstract class MemoryFileTree
             if (dir is null)
                 throw new ArgumentNullException(nameof(dir));
             if (Directories.Remove(dir.Name, out var removed) is false)
-                throw new FileSystemException.NotFound(dir.Path().Value);
+                return;
             var tombstones = GetRoot().Tombstones;
             foreach (var file in removed.RecursiveFiles())
             {
