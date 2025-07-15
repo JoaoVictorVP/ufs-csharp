@@ -8,6 +8,8 @@ public class FileSystemException(string message) : Exception(message)
         : FileSystemException($"Access to the path '{path}' is forbidden.");
     public class ReadOnly(string path)
         : FileSystemException($"The file system at '{path}' is read-only.");
+    public class NotFound(string path)
+        : FileSystemException($"The path '{path}' was not found.");
 }
 
 public class PathException(string message) : FileSystemException(message)

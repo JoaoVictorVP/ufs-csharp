@@ -1,8 +1,9 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace ufs;
 
-public readonly record struct FsPath
+public readonly struct FsPath
 {
     static readonly char[] InvalidPathChars = Path.GetInvalidPathChars();
 
@@ -16,6 +17,37 @@ public readonly record struct FsPath
     public bool IsRelative => !IsAbsolute;
     public bool IsRoot => Value == "/";
 
+    public IEnumerable<ReadOnlyMemory<char>> Segments(FsPath workingDirectory)
+    {
+        var self = this;
+        if (self.IsRelative)
+            self = self.Locate(workingDirectory);
+        var value = self.Value.AsMemory();
+        var slashCount = value.Span.Count('/');
+        // Span<Range> segments = stackalloc Range[slashCount + 1];
+        Range[] segments = new Range[slashCount + 1];
+        int segmentCount = value.Span.Split(segments, '/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var segmentRange in segments[..segmentCount])
+        {
+            var segment = value[segmentRange];
+            yield return segment;
+        }
+    }
+
+    public FsPath Locate(FsPath workingDirectory)
+    {
+        if (IsAbsolute)
+            return this;
+        var final = Path.GetFullPath(Value, workingDirectory.Value);
+        return final.FsPath();
+    }
+
+    public FsPath DirectoryPath =>
+        DirectoryName is ""
+            ? this
+            : new(Path.GetDirectoryName(Value)
+                ?? throw new InvalidOperationException("Path is in an invalid state."));
+
     public FsPath WithRoot(string root)
     {
         if (IsAbsolute)
@@ -23,6 +55,17 @@ public readonly record struct FsPath
         if (IsRelative)
             return this;
         throw new InvalidOperationException("Path is in an invalid state.");
+    }
+
+    public FsPath Appending(string segment)
+    {
+        if (string.IsNullOrWhiteSpace(segment))
+            throw new ArgumentException("Segment cannot be null or whitespace.", nameof(segment));
+        if (IsRoot)
+            return new FsPath(Value + segment);
+        if (IsAbsolute)
+            return new FsPath(Value + '/' + segment);
+        return new FsPath(Value + '/' + segment);
     }
 
     static void ValidateResolution(string path, string root)
@@ -45,28 +88,23 @@ public readonly record struct FsPath
     /// <exception cref="FileSystemException.Forbidden"></exception>
     public string? Resolve(string basis, string root)
     {
+        if (Value is "." or "./")
+            return basis;
+
         basis = basis.Replace("\\", "/");
         if (basis.EndsWith('/') is false)
             basis += '/';
         if (IsAbsolute)
         {
-            if (Value.StartsWith(basis))
+            if (Value.StartsWith(basis[..1]))
                 return Value;
             return null;
         }
         if (IsRelative)
         {
-            if (Value.StartsWith("./"))
-                return basis + Value[2..];
-            var value = Value;
-            while (value.StartsWith("../"))
-            {
-                basis = Path.GetDirectoryName(basis) ?? throw new InvalidOperationException("Root path cannot be resolved.");
-                value = value[3..];
-            }
-            var final = Path.Combine(basis, value);
-            ValidateResolution(final, root);
-            return final;
+            var resolved = Path.GetFullPath(Value, basis);
+            ValidateResolution(resolved, root);
+            return resolved;
         }
         throw new InvalidOperationException("Path is in an invalid state.");
     }
@@ -90,6 +128,12 @@ public readonly record struct FsPath
         if (string.IsNullOrWhiteSpace(value))
             throw new PathException.EmptyPath();
 
+        if (value is ".")
+        {
+            Value = value;
+            return;
+        }
+
         if (value.StartsWith('/'))
         {
             var segments = value.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -102,6 +146,38 @@ public readonly record struct FsPath
                 throw new PathException.InvalidPathCharacters(value);
         Value = value?.Replace("\\", "/") ?? throw new PathException.NullPath();
     }
+
+    public override bool Equals([NotNullWhen(true)] object? obj) => obj switch
+    {
+        FsPath other => Equals(other),
+        _ => false
+    };
+    public bool Equals(FsPath other)
+    {
+        var left = this;
+        var right = other;
+
+        bool rawEq = left.Value == right.Value;
+        if (rawEq)
+            return true;
+        var (lhsAbs, rhs) = (left.IsAbsolute, right.IsAbsolute) switch
+        {
+            (true, _) => (left, right),
+            (_, true) => (right, left),
+            _ => (left, right)
+        };
+        var rhsLocated = rhs.Locate(lhsAbs.DirectoryPath);
+        return lhsAbs.Value == rhsLocated.Value;
+    }
+    public override int GetHashCode()
+        => Value.GetHashCode();
+    public override string ToString()
+        => Value;
+
+    public static bool operator ==(FsPath left, FsPath right)
+        => left.Equals(right);
+    public static bool operator !=(FsPath left, FsPath right)
+        => left.Equals(right) is false;
 }
 public static class FsPathExtensions
 {

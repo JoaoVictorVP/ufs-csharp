@@ -7,7 +7,7 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
 {
     public abstract void Dispose();
 
-    interface IWritableFile
+    public interface IWritableFile
     {
         FsPath Path { get; }
         IFileSystem Fs { get; }
@@ -28,7 +28,7 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
             await Inner.WriteAsync(buffer, cancellationToken);
         }
     }
-    interface IReadableFile
+    public interface IReadableFile
     {
         FsPath Path { get; }
         IFileSystem Fs { get; }
@@ -75,7 +75,13 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
     }
 
     public record class FileRW(FsPath Path, IFileSystem Fs, StreamWrapper Inner)
-        : FileWithStream(Path, Fs, Inner), IReadableFile, IWritableFile;
+        : FileWithStream(Path, Fs, Inner), IReadableFile, IWritableFile
+    {
+        public FileRO ReadOnly()
+            => new(Path, Fs, Inner);
+        public FileWO WriteOnly()
+            => new(Path, Fs, Inner);
+    }
     public record class FileRO(FsPath Path, IFileSystem Fs, StreamWrapper Inner)
         : FileWithStream(Path, Fs, Inner), IReadableFile;
     public record class FileWO(FsPath Path, IFileSystem Fs, StreamWrapper Inner)

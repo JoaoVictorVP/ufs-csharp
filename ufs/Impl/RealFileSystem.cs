@@ -39,14 +39,16 @@ public record class RealFileSystem(string Root, bool ReadOnly = false) : IFileSy
         return Task.FromResult(new FileEntry.Directory(resolvedPath.FsPath(), this));
     }
 
-    public Task<FileEntry.FileRW> CreateFile(FsPath path, CancellationToken cancellationToken = default)
+    public async Task<FileEntry.FileRW> CreateFile(FsPath path, CancellationToken cancellationToken = default)
     {
         if (ReadOnly)
             throw new FileSystemException.ReadOnly(Root);
+        var dir = path.DirectoryPath;
+        await CreateDirectory(dir, cancellationToken);
         var resolvedPath = path.Resolve(Root, Root)
             ?? throw new PathException.InvalidPath(path.Value);
         var file = File.Create(resolvedPath);
-        return Task.FromResult(new FileEntry.FileRW(resolvedPath.FsPath(), this, file));
+        return new FileEntry.FileRW(resolvedPath.FsPath(), this, file);
     }
 
     public Task<bool> DeleteDirectory(FsPath path, bool recursive = false, CancellationToken cancellationToken = default)
@@ -121,6 +123,29 @@ public record class RealFileSystem(string Root, bool ReadOnly = false) : IFileSy
         return Task.FromResult(File.Exists(resolvedPath));
     }
 
+    public async Task<FileStatus> FileStat(FsPath path, CancellationToken cancellationToken = default)
+    {
+        if (await FileExists(path, cancellationToken) is false)
+            return FileStatus.NotFound;
+        return FileStatus.Exists;
+    }
+
+    public async Task<FileEntry.FileRW> Integrate(FileEntry.IReadableFile file, CancellationToken cancellationToken = default)
+    {
+        if (ReadOnly)
+            throw new FileSystemException.ReadOnly(Root);
+        var resolvedPath = file.Path.Resolve(Root, Root)
+            ?? throw new PathException.InvalidPath(file.Path.Value);
+        var dir = file.Path.DirectoryPath;
+        await CreateDirectory(dir, cancellationToken);
+
+        var sourceStream = file.Inner;
+        using var targetStream = File.Create(resolvedPath);
+        await sourceStream.CopyToAsync(targetStream, cancellationToken);
+        
+        return new FileEntry.FileRW(resolvedPath.FsPath(), this, targetStream);
+    }
+
     public Task<FileEntry.FileRO?> OpenFileRead(FsPath path, CancellationToken cancellationToken = default)
     {
         var resolvedPath = path.Resolve(Root, Root)
@@ -131,14 +156,16 @@ public record class RealFileSystem(string Root, bool ReadOnly = false) : IFileSy
         return Task.FromResult(new FileEntry.FileRO(resolvedPath.FsPath(), this, file))!;
     }
 
-    public Task<FileEntry.FileRW?> OpenFileReadWrite(FsPath path, CancellationToken cancellationToken = default)
+    public async Task<FileEntry.FileRW?> OpenFileReadWrite(FsPath path, CancellationToken cancellationToken = default)
     {
         if (ReadOnly)
             throw new FileSystemException.ReadOnly(Root);
+        var dir = path.DirectoryPath;
+        await CreateDirectory(dir, cancellationToken);
         var resolvedPath = path.Resolve(Root, Root)
             ?? throw new PathException.InvalidPath(path.Value);
         var file = File.Open(resolvedPath, FileMode.OpenOrCreate, FileAccess.ReadWrite);
-        return Task.FromResult(new FileEntry.FileRW(resolvedPath.FsPath(), this, file))!;
+        return new FileEntry.FileRW(resolvedPath.FsPath(), this, file);
     }
 
     public Task<FileEntry.FileWO?> OpenFileWrite(FsPath path, CancellationToken cancellationToken = default)

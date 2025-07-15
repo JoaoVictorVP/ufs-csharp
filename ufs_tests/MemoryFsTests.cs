@@ -1,19 +1,22 @@
-﻿using ufs;
-using ufs.Impl;
+using System;
 using System.Text;
+using ufs;
+using ufs.Impl;
+using ufs.Impl.InMemory;
 
 namespace ufs_tests;
 
-public class RealFsTests : IDisposable
+public class MemoryFsTests : IDisposable
 {
-    private readonly string testRoot;
+    private readonly string testRoot = "/tmp/ufs_test_root";
     private readonly IFileSystem fs;
 
-    public RealFsTests()
+    public MemoryFsTests()
     {
-        testRoot = Path.Combine(Path.GetTempPath(), "ufs_tests_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(testRoot);
-        fs = new RealFileSystem(testRoot);
+        var root = new MemoryFileTree.Root();
+        var tmp = root.CreateDir("tmp");
+        var testRootDir = tmp.CreateDir("ufs_test_root");
+        fs = new MemoryFileSystem(testRootDir);
     }
 
     public void Dispose()
@@ -528,7 +531,6 @@ public class RealFsTests : IDisposable
     [Fact]
     public async Task InvalidPath_ShouldThrowPathException()
     {
-        // Test with a path that should be invalid during resolution, not construction
         var invalidPath = "./../../outside_root".FsPath();
         
         await Assert.ThrowsAnyAsync<Exception>(

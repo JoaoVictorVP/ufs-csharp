@@ -15,8 +15,12 @@ public interface IFileSystem
     Task<FileEntry.Directory> CreateDirectory(FsPath path, CancellationToken cancellationToken = default);
     Task<bool> DeleteFile(FsPath path, CancellationToken cancellationToken = default);
     Task<bool> DeleteDirectory(FsPath path, bool recursive = false, CancellationToken cancellationToken = default);
+    
+    Task<FileEntry.FileRW> Integrate(FileEntry.IReadableFile file, CancellationToken cancellationToken = default);
 
     IAsyncEnumerable<FileEntry> Entries(FsPath path, ListEntriesMode mode, CancellationToken cancellationToken = default);
+
+    Task<FileStatus> FileStat(FsPath path, CancellationToken cancellationToken = default);
 
     IFileSystem At(FsPath path, FileSystemMode mode = FileSystemMode.Inherit);
 }
@@ -36,6 +40,18 @@ public record ListEntriesMode
     public static ListEntriesMode Recursive(string filter)
         => new RecursiveMode(filter);
 
-    public record ShallowMode(string Filter) : ListEntriesMode;
-    public record RecursiveMode(string Filter) : ListEntriesMode;
+    public record ShallowMode(string Filter) : ListEntriesMode
+    {
+        public bool IsAll => Filter == "*";
+    }
+    public record RecursiveMode(string Filter) : ListEntriesMode
+    {
+        public bool IsAll => Filter == "*";
+    }
+}
+public enum FileStatus
+{
+    NotFound = 0,
+    Exists = 1,
+    Deleted = 2,
 }
