@@ -35,6 +35,19 @@ public readonly record struct FsPath
             : new(Path.GetDirectoryName(Value)
                 ?? throw new InvalidOperationException("Path is in an invalid state."));
 
+    public bool InDirectory(FsPath directory)
+    {
+        var curDir = DirectoryPath;
+        var lastDir = "/".FsPath();
+        while (curDir != lastDir)
+        {
+            if (curDir == directory)
+                return true;
+            curDir = curDir.DirectoryPath;
+        }
+        return curDir == directory;
+    }
+
     public FsPath Appending(string segment)
     {
         if (string.IsNullOrWhiteSpace(segment))

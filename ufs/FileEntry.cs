@@ -15,7 +15,8 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
 
         async Task Write(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            await Inner.WriteAsync(buffer, cancellationToken);
+            await Inner.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
+            await Inner.Flush(cancellationToken).ConfigureAwait(false);
         }
 
         public async Task WriteAllText(string text, Encoding? encoding = null, CancellationToken cancellationToken = default)
@@ -26,11 +27,12 @@ public abstract record class FileEntry(FsPath Path, IFileSystem Fs) : IDisposabl
             var buffer = memOwner.Memory[..bytes.Length];
             bytes.CopyTo(buffer.Span);
             await Inner.WriteAsync(buffer, cancellationToken);
+            await Inner.Flush(cancellationToken).ConfigureAwait(false);
         }
 
         public async Task Flush(CancellationToken cancellationToken = default)
         {
-            await Inner.Flush(cancellationToken);
+            await Inner.Flush(cancellationToken).ConfigureAwait(false);
         }
     }
     public interface IReadableFile

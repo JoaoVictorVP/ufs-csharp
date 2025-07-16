@@ -4,6 +4,8 @@ namespace ufs;
 
 public abstract record class StreamWrapper : IDisposable
 {
+    public static readonly StreamWrapper Null = Stream.Null;
+
     public abstract bool IsReadable { get; }
     public abstract bool IsWritable { get; }
     public abstract long Length { get; }

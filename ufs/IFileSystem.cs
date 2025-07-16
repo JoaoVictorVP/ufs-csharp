@@ -30,7 +30,7 @@ public enum FileSystemMode
     ReadOnly = 1,
     ReadWrite = 2,
 }
-public record ListEntriesMode
+public record ListEntriesMode(string Filter)
 {
     public static readonly ListEntriesMode ShallowAll = new ShallowMode("*");
     public static readonly ListEntriesMode RecursiveAll = new RecursiveMode("*");
@@ -40,11 +40,11 @@ public record ListEntriesMode
     public static ListEntriesMode Recursive(string filter)
         => new RecursiveMode(filter);
 
-    public record ShallowMode(string Filter) : ListEntriesMode
+    public record ShallowMode(string Filter) : ListEntriesMode(Filter)
     {
         public bool IsAll => Filter == "*";
     }
-    public record RecursiveMode(string Filter) : ListEntriesMode
+    public record RecursiveMode(string Filter) : ListEntriesMode(Filter)
     {
         public bool IsAll => Filter == "*";
     }

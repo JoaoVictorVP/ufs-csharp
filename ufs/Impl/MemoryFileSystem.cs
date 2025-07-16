@@ -109,35 +109,7 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
             ?? throw new FileSystemException.NotFound(path.Value);
 
         static string ToPattern(string filter)
-        {
-            if (filter is "" or "*")
-                return @".*";
-            return filter.Replace(".", @"\.")
-                .Replace("*", @".*")
-                .Replace("?", @".?")
-                .Replace("[", @"\[")
-                .Replace("]", @"\]")
-                .Replace("(", @"\(")
-                .Replace(")", @"\)")
-                .Replace("{", @"\{")
-                .Replace("}", @"\}")
-                .Replace("+", @"\+")
-                .Replace("$", @"\$")
-                .Replace("^", @"\^")
-                .Replace("|", @"\|")
-                .Replace("~", @"\~")
-                .Replace("`", @"\`")
-                .Replace("=", @"\=")
-                .Replace("!", @"\!")
-                .Replace(">", @"\>")
-                .Replace("<", @"\<")
-                .Replace("&", @"\&")
-                .Replace("'", @"\'")
-                .Replace("\"", @"\""")
-                .Replace(";", @"\;")
-                .Replace(",", @"|")
-                .Replace("/", @"\/");
-        }
+            => FileUtils.GlobFilterToPattern(filter);
 
         var rootPath = Root.Path();
         FsPath RelativePath(FsPath fullPath)

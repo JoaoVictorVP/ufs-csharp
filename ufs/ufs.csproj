@@ -5,6 +5,25 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>13</LangVersion>
+
+    <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>1591</NoWarn>
+    <Title>ufs</Title>
+    <VersionPrefix>0.0.1</VersionPrefix>
+    <Description>
+      --- Universal File System ---
+      A virtual file system that allows you to access files and directories across different storage backends seamlessly.
+      It supports local file systems, in memory ones, overlay file systems and even one backed by minio (ufs.minio package).
+      Everything is designed to be used extensively with async/await.
+    </Description>
+
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
 </Project>

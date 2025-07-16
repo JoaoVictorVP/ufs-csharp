@@ -4,10 +4,33 @@
     <ProjectReference Include="..\ufs\ufs.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Minio" Version="6.0.5" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>1591</NoWarn>
+    <Title>ufs.minio</Title>
+    <VersionPrefix>0.0.1</VersionPrefix>
+    <Description>
+      --- Universal File System (Minio) ---
+      A virtual file system that allows you to access files and directories across different storage backends seamlessly.
+      It supports local file systems, in memory ones, overlay file systems and even one backed by minio (ufs.minio package).
+      Everything is designed to be used extensively with async/await.
+    </Description>
+
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
 </Project>
