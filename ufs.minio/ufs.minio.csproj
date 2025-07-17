@@ -20,7 +20,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>1591</NoWarn>
     <Title>ufs.minio</Title>
-    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionPrefix>0.1.1</VersionPrefix>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>
       --- Universal File System (Minio) ---
