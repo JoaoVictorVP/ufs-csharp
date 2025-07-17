@@ -160,9 +160,8 @@ public record class MemoryFileSystem(MemoryFileTree.Directory Root) : IFileSyste
 
     public Task<bool> FileExists(FsPath path, CancellationToken cancellationToken = default)
     {
-        var dir = Root.FindDirectory(path.DirectoryPath)
-            ?? throw new FileSystemException.NotFound(path.Value);
-        return Task.FromResult(dir.GetFile(path.FileName.ToString()) is not null);
+        var dir = Root.FindDirectory(path.DirectoryPath);
+        return Task.FromResult(dir?.GetFile(path.FileName.ToString()) is not null);
     }
 
     public Task<FileEntry.FileRW> Integrate(FileEntry.IReadableFile file, CancellationToken cancellationToken = default)

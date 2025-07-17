@@ -21,6 +21,7 @@
     <NoWarn>1591</NoWarn>
     <Title>ufs.minio</Title>
     <VersionPrefix>0.0.1</VersionPrefix>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>
       --- Universal File System (Minio) ---
       A virtual file system that allows you to access files and directories across different storage backends seamlessly.
@@ -33,4 +34,10 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Content Include="../README.md">
+      <Pack>true</Pack>
+      <PackagePath></PackagePath>
+    </Content>
+  </ItemGroup>
 </Project>

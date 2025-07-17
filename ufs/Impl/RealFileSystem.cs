@@ -3,12 +3,26 @@ namespace ufs.Impl;
 
 public record class RealFileSystem(string Root, bool ReadOnly = false) : IFileSystem
 {
-    public static RealFileSystem AtAppDir<Self>()
+    public static RealFileSystem AtTempDir(bool readOnly = false)
     {
-        var appDir = typeof(Self).Assembly.Location;
+        var tempPath = Path.GetTempPath();
+        if (string.IsNullOrEmpty(tempPath))
+            throw new InvalidOperationException("Could not determine temporary directory path.");
+        return new RealFileSystem(tempPath, readOnly);
+    }
+    public static RealFileSystem AtAppDir<Program>()
+    {
+        var appDir = typeof(Program).Assembly.Location;
         var root = Path.GetDirectoryName(appDir)
             ?? throw new InvalidOperationException($"Could not determine application directory from '{appDir}'");
         return new RealFileSystem(root, false);
+    }
+    public static RealFileSystem AtWorkingDir(bool readOnly = false)
+    {
+        var workingDir = Directory.GetCurrentDirectory();
+        if (string.IsNullOrEmpty(workingDir))
+            throw new InvalidOperationException("Could not determine current working directory.");
+        return new RealFileSystem(workingDir, readOnly);
     }
 
     public IFileSystem At(FsPath path, FileSystemMode mode = FileSystemMode.Inherit)

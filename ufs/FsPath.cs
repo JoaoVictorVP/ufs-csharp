@@ -7,6 +7,8 @@ public readonly record struct FsPath
 {
     static readonly char[] InvalidPathChars = Path.GetInvalidPathChars();
 
+    public static readonly FsPath Root = new("/");
+
     public string Value { get; init; }
 
     public ReadOnlySpan<char> Extension => Path.GetExtension(Value.AsSpan());
@@ -35,6 +37,26 @@ public readonly record struct FsPath
             : new(Path.GetDirectoryName(Value)
                 ?? throw new InvalidOperationException("Path is in an invalid state."));
 
+    public FsPath ChangeDirectory(FsPath oldDir, FsPath newDir)
+    {
+        if (oldDir == newDir)
+            return this;
+
+        if (Value.StartsWith(oldDir.Value))
+        {
+            string newPath;
+            if(newDir.IsRoot)
+                newPath = Value[oldDir.Value.Length..];
+            else if (newDir.Value.EndsWith('/'))
+                newPath = newDir.Value + Value[oldDir.Value.Length..];
+            else
+                newPath = newDir.Value + '/' + Value[oldDir.Value.Length..];
+            return new FsPath(newPath);
+        }
+
+        throw new InvalidOperationException($"Cannot change directory from {oldDir} to {newDir} for path {this}.");
+    }
+
     public bool InDirectory(FsPath directory)
     {
         var curDir = DirectoryPath;
@@ -52,6 +74,11 @@ public readonly record struct FsPath
     {
         if (string.IsNullOrWhiteSpace(segment))
             throw new ArgumentException("Segment cannot be null or whitespace.", nameof(segment));
+        foreach(var c in segment)
+        {
+            if (InvalidPathChars.Contains(c))
+                throw new PathException.InvalidPathCharacters(Value);
+        }
         return new FsPath(Path.Combine(Value, segment));
     }
 
@@ -84,6 +111,8 @@ public readonly record struct FsPath
             value = value.Replace('\\', '/');
         if (value.StartsWith('/') is false)
             throw new PathException.InvalidPath(value);
+        // if(value.EndsWith('/'))
+        //     value = value.TrimEnd('/');
 
         var segments = value.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Any(segment => segment == "." || segment == ".."))
@@ -97,6 +126,9 @@ public readonly record struct FsPath
 
     public override string ToString()
         => Value;
+
+    public static FsPath operator /(FsPath path, string segment)
+        => path.Appending(segment);
 }
 public static class FsPathExtensions
 {

@@ -13,7 +13,8 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>1591</NoWarn>
     <Title>ufs</Title>
-    <VersionPrefix>0.0.1</VersionPrefix>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>
       --- Universal File System ---
       A virtual file system that allows you to access files and directories across different storage backends seamlessly.
@@ -26,4 +27,10 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Content Include="../README.md">
+      <Pack>true</Pack>
+      <PackagePath></PackagePath>
+    </Content>
+  </ItemGroup>
 </Project>
