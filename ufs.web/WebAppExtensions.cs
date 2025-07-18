@@ -10,7 +10,7 @@ public static class WebAppExtensions
         {
             if (path.StartsWith('/') is false)
                 path = '/' + path;
-            return path.FsPath();
+            return path.UriDecodedFsPath();
         }
 
         var gufs = web.MapGroup("/ufs").WithTags("ufs");

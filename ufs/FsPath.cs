@@ -146,4 +146,25 @@ public static class FsPathExtensions
     {
         return new FsPath(value.Span.ToString());
     }
+
+    public static string UriEncoded(this FsPath path)
+    {
+        var rawPath = path.Value;
+        return string.Join(
+            '/',
+            rawPath.Split('/', StringSplitOptions.RemoveEmptyEntries)
+               .Select(Uri.EscapeDataString)
+        );
+    }
+    public static FsPath UriDecodedFsPath(this string encodedPath)
+    {
+        var built = string.Join(
+            '/',
+            encodedPath.Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Select(Uri.UnescapeDataString)
+        );
+        if (built is not ['/', ..])
+            built = '/' + built;
+        return built.FsPath();
+    }
 }

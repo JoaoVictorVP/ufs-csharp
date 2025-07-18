@@ -83,7 +83,14 @@ public class ExampleFileAuthorizer(MyUserDatabase db) : IFileAuthorizer
 As you can see, you can inject whatever you want in your authorizer, and you can use async/await and yield permissions in your own pace if your want more heavy checks for things, etc. If you want something simple, you can as well, it's fine.
 This will not be cached (for now), so you should optimize your things, but for file operations this should not be a big problem either way, you generally want them to be really safe.
 
+If you want, you can also have access to utilities (currently 1). You can register them with `services.AddUfsUtilities()`.
+Current utilities are ->
+* IWebFsProvider: allow for you to generate a download link for a given path
+
 ### Release Notes
+##### 0.1.0 (ufs/ufs.minio) / 0.3.0 (ufs.web)
+Adds IWebFsProvider and `AddUfsUtilities` for configuring it.
+
 ##### 0.1.0 (ufs/ufs.minio) / 0.2.0 (ufs.web)
 Releases `ufs.web`
 
