@@ -1,8 +1,12 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization;
+using ufs.Serializers;
 
 namespace ufs;
 
+[JsonConverter(typeof(FsPathJsonSerializer))]
 public readonly record struct FsPath
 {
     static readonly char[] InvalidPathChars = Path.GetInvalidPathChars();
@@ -45,7 +49,7 @@ public readonly record struct FsPath
         if (Value.StartsWith(oldDir.Value))
         {
             string newPath;
-            if(newDir.IsRoot)
+            if (newDir.IsRoot)
                 newPath = Value[oldDir.Value.Length..];
             else if (newDir.Value.EndsWith('/'))
                 newPath = newDir.Value + Value[oldDir.Value.Length..];
@@ -74,11 +78,13 @@ public readonly record struct FsPath
     {
         if (string.IsNullOrWhiteSpace(segment))
             throw new ArgumentException("Segment cannot be null or whitespace.", nameof(segment));
-        foreach(var c in segment)
+        foreach (var c in segment)
         {
             if (InvalidPathChars.Contains(c))
                 throw new PathException.InvalidPathCharacters(Value);
         }
+        if (segment.StartsWith('/'))
+            segment = segment[1..];
         return new FsPath(Path.Combine(Value, segment));
     }
 
@@ -129,19 +135,28 @@ public readonly record struct FsPath
 
     public static FsPath operator /(FsPath path, string segment)
         => path.Appending(segment);
+    public static FsPath operator /(FsPath path, ReadOnlySpan<char> segment)
+        => path.Appending(segment.ToString());
+    public static FsPath operator /(FsPath path, ReadOnlyMemory<char> segment)
+        => path.Appending(segment.Span.ToString());
+    public static FsPath operator /(FsPath path, FsPath segment)
+        => path.Appending(segment.Value);
 }
 public static class FsPathExtensions
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static FsPath FsPath(this string value)
     {
         return new FsPath(value);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static FsPath FsPath(this ReadOnlySpan<char> value)
     {
         return new FsPath(value.ToString());
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static FsPath FsPath(this ReadOnlyMemory<char> value)
     {
         return new FsPath(value.Span.ToString());
