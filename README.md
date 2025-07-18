@@ -43,7 +43,50 @@ await mfs.WriteAllText("/otherdir/file.txt", "This will be written directly into
 ```
 Cool, right?
 
+### How to use? (ufs.web)
+With `ufs.web 0.2.0` you can now also configure your ASP.NET Core webserver to provide your files natively to the users using an unified API like this ->
+```
+GET ufs/entries/{shallow|deep}/{filter} -> JSON[string]                 | 403FORBIDDEN
+GET ufs/files/file.ext    -> stream (res)                | 404NOT_FOUND | 403FORBIDDEN
+PUT ufs/files/file.ext    -> stream (req)                               | 403FORBIDDEN
+DELETE ufs/files/file.ext -> ()                                         | 403FORBIDDEN
+HEAD ufs/files/file.ext   -> ()           | 200OK        | 404NOT_FOUND | 403FORBIDDEN
+```
+To use it, simply inject a custom instance of yours of `IFileAuthorizer` for your DI, then call `webApp.MapUfs(configureEp)`, passing to configureEp a lambda (or function) that will configure the endpoints with your own security settings. For example:
+```
+webApp.MapUfs(ep => ep.RequireAuthorization());
+```
+This will be applied to each created endpoint, and if you omit it or pass an empty lambda, it will be devoid of any authorization.
+Also inject your prefered IFileSystem in your DI, but in the keyed scope `"ufs.web"` to prevent clashes with other custom configs you may want to have in future.
+
+You can create your IFileAuthorizer like this ->
+```cs
+public class ExampleFileAuthorizer(MyUserDatabase db) : IFileAuthorizer
+{
+    private readonly MyUserDatabase db = db;
+
+    public async IAsyncEnumerable<FilePermissions> CheckPermissionsAsync(FsPath path, IFileSystem fs, HttpContext ctx, CancellationToken cancellationToken = default)
+    {
+        var perms = await db.GetPermissionsAsync(whatever);
+        if (perms.CanRead)
+            yield return FilePermissions.Read;
+        if (perms.CanWrite)
+            yield return FilePermissions.Write;
+        if (perms.CanDelete)
+            yield return FilePermissions.Delete;
+        if (perms.MaxWrittableSize is long maxSize)
+            yield return FilePermissions.MaxSize(maxSize);
+        ... // Add other permissions as needed
+    }
+}
+```
+As you can see, you can inject whatever you want in your authorizer, and you can use async/await and yield permissions in your own pace if your want more heavy checks for things, etc. If you want something simple, you can as well, it's fine.
+This will not be cached (for now), so you should optimize your things, but for file operations this should not be a big problem either way, you generally want them to be really safe.
+
 ### Release Notes
+##### 0.1.0 (ufs/ufs.minio) / 0.2.0 (ufs.web)
+Releases `ufs.web`
+
 ##### 0.1.0
 Added support for mount file system, allowing you to mount other file systems at specific paths.
 

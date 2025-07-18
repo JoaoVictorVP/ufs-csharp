@@ -43,6 +43,9 @@ public abstract record class StreamWrapper : IDisposable
     public WriteOnlyStream WriteOnly()
         => new(this);
 
+    public WriteLimitedStream WriteLimited(long maxWrittenSize)
+        => new(this, maxWrittenSize);
+
     public record Real(Stream Inner) : StreamWrapper
     {
         public override bool IsReadable => Inner.CanRead;
@@ -373,6 +376,53 @@ public abstract record class StreamWrapper : IDisposable
         {
             throw new NotSupportedException("Cannot copy from a write-only stream.");
         }
+    }
+    public record WriteLimitedStream(StreamWrapper Inner, long maxWrittenSize) : StreamWrapper
+    {
+        long written = 0;
+        public override bool IsReadable => Inner.IsReadable;
+        public override bool IsWritable => Inner.IsWritable && written < maxWrittenSize;
+        public override long Length => Inner.Length;
+
+        public override long Position
+        {
+            get => Inner.Position;
+            set => Inner.Position = value;
+        }
+
+        public override bool Owned => Inner.Owned;
+
+        public override void SetLength(long value)
+        {
+            if (value is 0)
+                written = 0;
+            Inner.SetLength(value);
+        }
+
+        public override Task<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => Inner.ReadAsync(buffer, cancellationToken);
+
+        public override async Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            written += buffer.Length;
+            if (written > maxWrittenSize)
+                throw new InvalidOperationException($"Cannot write more than {maxWrittenSize} bytes to this stream.");
+            if (Inner.IsWritable is false)
+                throw new InvalidOperationException("Cannot write to a read-only stream.");
+            await Inner.WriteAsync(buffer, cancellationToken);
+        }
+
+        public override Task Flush(CancellationToken cancellationToken = default)
+            => Inner.Flush(cancellationToken);
+
+        public override void Dispose()
+        {
+            GC.SuppressFinalize(this);
+            Inner.Dispose();
+        }
+
+        public override Task CopyToAsync(StreamWrapper destination, CancellationToken cancellationToken = default)
+            => Inner.CopyToAsync(destination, cancellationToken);
     }
 
     public static implicit operator StreamWrapper(Stream real) => new Real(real);

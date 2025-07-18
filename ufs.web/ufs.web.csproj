@@ -1,0 +1,44 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\ufs\ufs.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>library</OutputType>
+    <IsPackable>true</IsPackable>
+
+    <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>1591</NoWarn>
+    <Title>ufs.web</Title>
+    <VersionPrefix>0.2.0</VersionPrefix>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>
+      --- Universal File System (Web) ---
+      A virtual file system that allows you to access files and directories across different storage backends seamlessly.
+      It supports local file systems, in memory ones, overlay file systems and even one backed by minio (ufs.minio package).
+      Everything is designed to be used extensively with async/await.
+
+      This package provides a web interface to the Universal File System, allowing you to interact with files and directories over minimal APIs in your ASP.NET Core project.
+      You can configure custom permissions as well (see README.md for more details).
+    </Description>
+
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="../README.md">
+      <Pack>true</Pack>
+      <PackagePath></PackagePath>
+    </Content>
+  </ItemGroup>
+</Project>
