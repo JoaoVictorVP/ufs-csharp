@@ -18,7 +18,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>1591</NoWarn>
     <Title>ufs.web</Title>
-    <VersionPrefix>0.3.1</VersionPrefix>
+    <VersionPrefix>0.3.2</VersionPrefix>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>
       --- Universal File System (Web) ---

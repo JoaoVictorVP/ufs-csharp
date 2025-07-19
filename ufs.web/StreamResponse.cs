@@ -32,4 +32,25 @@ public static class StreamResponseExtensions
             return new NotFoundResult();
         return self.Value.ActionResultInline(http);
     }
+
+    public static Task<IActionResult> ActionResultAttachment(this Task<StreamResponse> self, HttpResponse http)
+        => self.ContinueWith(t => t.Result.ActionResultAttachment(http));
+    public static Task<IActionResult> ActionResultAttachment(this Task<StreamResponse?> self, HttpResponse http)
+        => self.ContinueWith(t => t.Result.ActionResultAttachment(http));
+    public static Task<IActionResult> ActionResultInline(this Task<StreamResponse> self, HttpResponse http)
+        => self.ContinueWith(t => t.Result.ActionResultInline(http));
+    public static Task<IActionResult> ActionResultInline(this Task<StreamResponse?> self, HttpResponse http)
+        => self.ContinueWith(t => t.Result.ActionResultInline(http));
+    public static Task<IActionResult> ActionResultAttachment(this ValueTask<StreamResponse> self,
+        HttpResponse http)
+        => self.AsTask().ContinueWith(t => t.Result.ActionResultAttachment(http));
+    public static Task<IActionResult> ActionResultAttachment(this ValueTask<StreamResponse?> self,
+        HttpResponse http)
+        => self.AsTask().ContinueWith(t => t.Result.ActionResultAttachment(http));
+    public static Task<IActionResult> ActionResultInline(this ValueTask<StreamResponse> self,
+        HttpResponse http)
+        => self.AsTask().ContinueWith(t => t.Result.ActionResultInline(http));
+    public static Task<IActionResult> ActionResultInline(this ValueTask<StreamResponse?> self,
+        HttpResponse http)
+        => self.AsTask().ContinueWith(t => t.Result.ActionResultInline(http));
 }
