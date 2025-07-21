@@ -2,9 +2,9 @@ using System;
 
 namespace ufs.web;
 
-public class DefaultWebFsProvider(HttpContextAccessor http) : IWebFsProvider
+public class DefaultWebFsProvider(IHttpContextAccessor http) : IWebFsProvider
 {
-    private readonly HttpContextAccessor http = http;
+    private readonly IHttpContextAccessor http = http;
 
     public ValueTask<string> GetDownloadUrl(FsPath path)
     {

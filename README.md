@@ -88,6 +88,9 @@ Current utilities are ->
 * IWebFsProvider: allow for you to generate a download link for a given path
 
 ### Release Notes
+##### 0.3.3 (ufs.web)
+Fixes a silly mistake with the HttpContextAccessor injection, it should had injected the interface instead.
+
 ##### 0.1.0 (ufs/ufs.minio) / 0.3.0 (ufs.web)
 Adds IWebFsProvider and `AddUfsUtilities` for configuring it.
 
