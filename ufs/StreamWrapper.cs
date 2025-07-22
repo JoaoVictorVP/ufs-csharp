@@ -307,7 +307,12 @@ public abstract record class StreamWrapper : IDisposable
         public override long Position
         {
             get => Inner.Position;
-            set => throw new NotSupportedException("Cannot set position on a read-only stream.");
+            set
+            {
+                if (Inner.Position == value)
+                    return;
+                Inner.Position = value;
+            }
         }
 
         public override bool Owned => Inner.Owned;

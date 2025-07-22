@@ -104,7 +104,12 @@ public sealed record MinioReadStream(Stream BackingStream, long BackingLength) :
     public override long Position
     {
         get => BackingStream.Position;
-        set => throw new NotSupportedException("Cannot set position on read-only stream");
+        set
+        {
+            if (BackingStream.Position == value)
+                return;
+            BackingStream.Position = value;
+        }
     }
 
     public override bool Owned => true;

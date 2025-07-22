@@ -88,6 +88,12 @@ Current utilities are ->
 * IWebFsProvider: allow for you to generate a download link for a given path
 
 ### Release Notes
+##### 0.4.0 (ufs)
+Adds the ability to change the position of a read-only stream.
+
+##### 0.2.0 (ufs.minio)
+Adds the ability to change the position of a minio read stream.
+
 ##### 0.3.3 (ufs)
 Implements IParsable for FsPath.
 
