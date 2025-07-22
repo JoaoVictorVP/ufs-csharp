@@ -12,4 +12,12 @@ public static class StreamExtensions
             return null;
         return new StreamWrapper.Real(stream);
     }
+
+    [return: NotNullIfNotNull(nameof(stream))]
+    public static BufferedStream? Buffered(this Stream? stream, int bufferSize = 4096)
+    {
+        if (stream is null)
+            return null;
+        return new BufferedStream(stream, bufferSize);
+    }
 }

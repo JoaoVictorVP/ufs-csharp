@@ -116,7 +116,6 @@ public sealed record MinioReadStream(Stream BackingStream, long BackingLength) :
 
     public override Task CopyToAsync(StreamWrapper destination, CancellationToken cancellationToken = default)
     {
-        BackingStream.Position = 0;
         using var bufferOwner = MemoryPool<byte>.Shared.Rent(81920);
         var buffer = bufferOwner.Memory;
         int bytesRead;

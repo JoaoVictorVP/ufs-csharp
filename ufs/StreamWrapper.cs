@@ -46,6 +46,20 @@ public abstract record class StreamWrapper : IDisposable
     public WriteLimitedStream WriteLimited(long maxWrittenSize)
         => new(this, maxWrittenSize);
 
+    public Real Buffered(int bufferSize = 4096)
+        => new(GetBackedStream().Buffered(bufferSize));
+
+    public Real Synchronized()
+        => new(Stream.Synchronized(GetBackedStream()));
+
+    public async Task<Real> IntoMemory()
+    {
+        var mem = new MemoryStream((int)Length);
+        await CopyToAsync(mem).ConfigureAwait(false);
+        mem.Position = 0;
+        return new Real(mem);
+    }
+
     public record Real(Stream Inner) : StreamWrapper
     {
         public override bool IsReadable => Inner.CanRead;

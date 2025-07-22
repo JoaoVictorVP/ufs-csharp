@@ -221,8 +221,42 @@ public class MinioFsTests : IAsyncLifetime
         Assert.True(readFile.Inner.IsReadable);
         Assert.False(readFile.Inner.IsWritable);
 
+        var mem = await readFile.Inner.IntoMemory();
+
+        mem.Position = 0;
+
+        var buffer = new byte[mem.Length];
+        await mem.ReadAsync(buffer);
+        var readContent = Encoding.UTF8.GetString(buffer);
+        Assert.Equal(content, readContent);
+
+        readFile.Inner.Dispose();
+    }
+
+        [Fact]
+    public async Task OpenFileRead_ExistingFile_ShouldReturnFileRO_BackedStream_AndBeAbleToSeek()
+    {
+        var filePath = "/file_to_read.txt".FsPath();
+        var content = "Hello, World!";
+        var contentBytes = Encoding.UTF8.GetBytes(content);
+
+        using var file = await fs.CreateFile(filePath);
+        await file.Inner.WriteAsync(contentBytes);
+        await file.Inner.Flush();
+        file.Inner.Dispose();
+
+        using var readFile = await fs.OpenFileRead(filePath);
+        Assert.NotNull(readFile);
+        Assert.True(readFile.Inner.IsReadable);
+        Assert.False(readFile.Inner.IsWritable);
+
+        var stream = (await readFile.Inner.IntoMemory()).GetBackedStream();
+
+        var pos = stream.Position;
+        stream.Position = 0;
+
         var buffer = new byte[readFile.Inner.Length];
-        await readFile.Inner.ReadAsync(buffer);
+        await stream.ReadAsync(buffer);
         var readContent = Encoding.UTF8.GetString(buffer);
         Assert.Equal(content, readContent);
 
