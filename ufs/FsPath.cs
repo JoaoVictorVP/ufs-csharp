@@ -7,8 +7,30 @@ using ufs.Serializers;
 namespace ufs;
 
 [JsonConverter(typeof(FsPathJsonSerializer))]
-public readonly record struct FsPath
+public readonly record struct FsPath : IParsable<FsPath>
 {
+    public static FsPath Parse(string s, IFormatProvider? provider)
+        => new(s);
+
+    public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, [MaybeNullWhen(false)] out FsPath result)
+    {
+        if (s is null)
+        {
+            result = default;
+            return false;
+        }
+        try
+        {
+            result = new(s);
+            return true;
+        }
+        catch
+        {
+            result = default;
+            return false;
+        }
+    }
+
     static readonly char[] InvalidPathChars = Path.GetInvalidPathChars();
 
     public static readonly FsPath Root = new("/");

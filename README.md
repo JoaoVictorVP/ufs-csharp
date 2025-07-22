@@ -88,6 +88,9 @@ Current utilities are ->
 * IWebFsProvider: allow for you to generate a download link for a given path
 
 ### Release Notes
+##### 0.3.3 (ufs)
+Implements IParsable for FsPath.
+
 ##### 0.3.3 (ufs.web)
 Fixes a silly mistake with the HttpContextAccessor injection, it should had injected the interface instead.
 
