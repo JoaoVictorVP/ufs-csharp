@@ -27,7 +27,7 @@ public abstract record class StreamWrapper : IDisposable
 
     public Cow CopyOnWrite(Func<StreamWrapper> create)
         => new(this, create);
-    
+
     public StreamWrapper ZeroPos()
     {
         Position = 0;
@@ -36,10 +36,10 @@ public abstract record class StreamWrapper : IDisposable
 
     public MirrorStream Mirror()
         => new(this);
-    
+
     public ReadOnlyStream ReadOnly()
         => new(this);
-    
+
     public WriteOnlyStream WriteOnly()
         => new(this);
 
@@ -338,7 +338,7 @@ public abstract record class StreamWrapper : IDisposable
         {
             return Inner.ReadAsync(buffer, cancellationToken);
         }
-        
+
         public override Task WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Cannot write to a read-only stream.");
 
@@ -446,17 +446,18 @@ public abstract record class StreamWrapper : IDisposable
 
     public static implicit operator StreamWrapper(Stream real) => new Real(real);
 
-    public BackedStream GetBackedStream()
+    public BackedStream GetBackedStream(bool seekable = false)
     {
-        return new BackedStream(this);
+        return new BackedStream(this, seekable);
     }
-    public class BackedStream(StreamWrapper wrapper) : Stream
+    public class BackedStream(StreamWrapper wrapper, bool seekable = false) : Stream
     {
         private readonly StreamWrapper wrapper = wrapper;
+        private readonly bool seekable = seekable;
 
         public override bool CanRead => wrapper.IsReadable;
 
-        public override bool CanSeek => false;
+        public override bool CanSeek => seekable;
 
         public override bool CanWrite => wrapper.IsWritable;
 
@@ -484,7 +485,15 @@ public abstract record class StreamWrapper : IDisposable
 
         public override long Seek(long offset, SeekOrigin origin)
         {
-            throw new NotSupportedException("Seek is not supported on this stream.");
+            long newPos = origin switch
+            {
+                SeekOrigin.Begin => offset,
+                SeekOrigin.Current => Position + offset,
+                SeekOrigin.End => Length + offset,
+                _ => throw new ArgumentOutOfRangeException(nameof(origin), "Invalid SeekOrigin value.")
+            };
+            Position = newPos;
+            return newPos;
         }
 
         public override void SetLength(long value)

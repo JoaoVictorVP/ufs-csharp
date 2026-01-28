@@ -5,11 +5,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Minio" Version="6.0.5" />
+    <PackageReference Include="Minio" Version="7.0.0" />
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
@@ -20,7 +20,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>1591</NoWarn>
     <Title>ufs.minio</Title>
-    <VersionPrefix>0.3.0</VersionPrefix>
+    <VersionPrefix>10.3.0</VersionPrefix>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>
       --- Universal File System (Minio) ---

@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <OutputType>library</OutputType>
@@ -18,7 +18,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>1591</NoWarn>
     <Title>ufs.web</Title>
-    <VersionPrefix>0.3.3</VersionPrefix>
+    <VersionPrefix>10.3.3</VersionPrefix>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>
       --- Universal File System (Web) ---
